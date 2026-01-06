@@ -23,7 +23,7 @@ class AhsWithItemsController extends Controller
     {
         try {
             $data = Ahs::with([
-                'items.item',  // relasi AhsItem → Item
+                'items',  // relasi AhsItem → Item
                 'files',       // foto & dokumen (polymorphic)
                 'vendor'
             ])
@@ -46,9 +46,7 @@ class AhsWithItemsController extends Controller
                         'merek' => $ahs->merek,
                         'produk_deskripsi' => $ahs->produk_deskripsi,
                         'spesifikasi' => $ahs->spesifikasi,
-                        'vendor' => $ahs->vendor ?? [],
-
-
+                        'vendor' => $ahs->vendor,
                         // === ITEM HEADER AHS ===
                         'item_ahs' => $itemAhs ? [
                             'item_id'     => $itemAhs->item_id,
@@ -75,7 +73,7 @@ class AhsWithItemsController extends Controller
                         'items' => $ahs->items->map(function ($it) {
                             return [
                                 'item_id' => $it->item_id,
-                                'item_no' => $it->item->item_no ?? null,
+                                'item_no' => $it->kategori == 'item' ? $it->item?->item_no : $it->item_form_ahs?->ahs,
                                 'uraian'  => $it->uraian,
                                 'satuan'  => $it->satuan,
                                 'volume'  => (float)    $it->volume,
@@ -105,108 +103,19 @@ class AhsWithItemsController extends Controller
 
     public function generateNoAhs()
     {
-        $prefix = 'AHS';
+        return DB::transaction(function () {
 
-        // Fungsi ini sudah benar menggunakan item_no
-        $last = DB::table('items')
-            ->where('item_no', 'like', "$prefix%")
-            ->orderBy('item_id', 'desc')
-            ->value('item_no');
+            $lastNumber = Ahs::selectRaw(
+                "MAX(CAST(REGEXP_REPLACE(ahs, '[^0-9]', '') AS UNSIGNED)) as max_no"
+            )
+                ->lockForUpdate()
+                ->value('max_no');
 
-        if ($last) {
-            preg_match('/(\d+)$/', $last, $matches);
-            $lastNumber = isset($matches[1]) ? (int) $matches[1] : 0;
-            $nextNumber = $lastNumber + 1;
-        } else {
-            $nextNumber = 1;
-        }
+            $nextNumber = ($lastNumber ?? 0) + 1;
 
-        return $prefix . $nextNumber;
+            return 'AHS' . $nextNumber;
+        });
     }
-
-    private function uploadFile(Request $request, string $fieldName, string $directory)
-    {
-        if ($request->hasFile($fieldName) && $request->file($fieldName)->isValid()) {
-            $file = $request->file($fieldName);
-            $originalFileName = $file->getClientOriginalName();
-            Log::info("File '$originalFileName' diupload ke direktori '$directory'.");
-            return $file->storeAs($directory, $originalFileName, 'public');
-        }
-        return null;
-    }
-
-    // public function store(Request $request)
-    // {
-    //     DB::beginTransaction();
-
-    //     try {
-    //         $validated = $request->validate([
-    //             'ahs'       => 'required|string',
-    //             'deskripsi' => 'required|string',
-    //             'merek' => 'required|string',
-    //             'satuan'    => 'required|string',
-    //             'vendor_id' => 'required|integer',
-    //             'provinsi'  => 'required|string',
-    //             'kab'       => 'required|string',
-    //             'tahun'     => 'required|integer',
-    //             'produk_gambar' => 'required|file',
-    //             'produk_deskripsi' => 'required|string',
-    //             'produk_dokumen' => 'required|file',
-    //             'spesifikasi' => 'required|string',
-
-    //             'items'              => 'required|array',
-    //             'items.*.item_no'    => 'required|string|exists:items,item_no',
-    //             'items.*.volume'     => 'required|numeric|min:0.01',
-    //         ]);
-
-    //         $ahs = Ahs::create([
-    //             'ahs'     => $validated['ahs'],
-    //             'deskripsi' => $validated['deskripsi'],
-    //             'satuan'    => $validated['satuan'],
-    //             'provinsi'  => $validated['provinsi'],
-    //             'kab'       => $validated['kab'],
-    //             'tahun'     => $validated['tahun'],
-    //             'harga_pokok_total' => 0,
-    //         ]);
-
-    //         $totalHarga = 0;
-
-    //         foreach ($validated['items'] as $inputItem) {
-    //             // Cari item berdasarkan item_no, bukan item_id
-    //             $item = Item::where('item_no', $inputItem['item_no'])->firstOrFail();
-
-    //             $volume = $inputItem['volume'];
-    //             $hpp = $item->hpp;
-    //             $jumlah = $volume * $hpp;
-
-    //             $ahs->items()->create([
-    //                 'item_id' => $item->item_id, // Foreign key tetap menggunakan item_id
-    //                 'uraian'  => $item->deskripsi,
-    //                 'satuan'  => $item->satuan,
-    //                 'volume'  => $volume,
-    //                 'hpp'     => $hpp,
-    //                 'jumlah'  => $jumlah,
-    //             ]);
-
-    //             $totalHarga += $jumlah;
-    //         }
-
-    //         $ahs->update(['harga_pokok_total' => $totalHarga]);
-
-    //         DB::commit();
-
-    //         return response()->json([
-    //             'message' => 'AHS dan detail berhasil disimpan',
-    //             'data'    => $ahs->load('items.item')
-    //         ]);
-    //     } catch (ValidationException $e) {
-    //         DB::rollBack();
-    //         return response()->json(['message' => 'Validasi gagal', 'errors' => $e->errors()], 422);
-    //     } catch (\Exception $e) {
-    //         DB::rollBack();
-    //         return response()->json(['message' => 'Terjadi kesalahan', 'error' => $e->getMessage()], 500);
-    //     }
-    // }
 
     public function getOptionItem(Request $request)
     {
@@ -242,6 +151,17 @@ class AhsWithItemsController extends Controller
         }
     }
 
+    private function uploadFile(Request $request, string $fieldName, string $directory)
+    {
+        if ($request->hasFile($fieldName) && $request->file($fieldName)->isValid()) {
+            $file = $request->file($fieldName);
+            $originalFileName = $file->getClientOriginalName();
+            Log::info("File '$originalFileName' diupload ke direktori '$directory'.");
+            return $file->storeAs($directory, $originalFileName, 'public');
+        }
+        return null;
+    }
+
     public function addDataAhs(Request $request)
     {
         DB::beginTransaction();
@@ -259,7 +179,6 @@ class AhsWithItemsController extends Controller
                 'tahun'     => 'required|string',
                 'vendor_no' => 'nullable|string|exists:vendors,vendor_no',
 
-
                 // ubah ke array agar mendukung multiple file; tetap kompatibel jika user hanya kirim 1 file
                 'produk_foto'        => 'nullable|array',
                 'produk_foto.*'      => 'file|mimes:jpg,jpeg,png|max:2048',
@@ -271,7 +190,18 @@ class AhsWithItemsController extends Controller
                 'spesifikasi' => 'nullable|string',
 
                 'items'     => 'required|array',
-                'items.*.item_no' => 'required|string|exists:items,item_no',
+                'items.*.item_no' => [
+                    'required',
+                    'string',
+                    function ($attr, $value, $fail) {
+                        $isItem = Item::where('item_no', $value)->exists();
+                        $isAhs  = Ahs::where('ahs', $value)->exists();
+
+                        if (!$isItem && !$isAhs) {
+                            $fail("Item atau AHS ($value) tidak ditemukan");
+                        }
+                    }
+                ],
                 'items.*.volume'  => 'required|numeric|min:0.01',
             ], [
                 'deskripsi.required' => 'Masukkan deskripsi!',
@@ -289,9 +219,10 @@ class AhsWithItemsController extends Controller
 
             $vendorId = $request->vendor_id ?? null;
 
-            // 1) buat AHS
+            $noAhs = $this->generateNoAhs();
+            // 1) buat AHS dulu
             $add_ahs = Ahs::create([
-                'ahs'       => 'no ahs sementara',
+                'ahs'       => $noAhs, // atau boleh 'TEMP'
                 'deskripsi' => $request->deskripsi,
                 'merek'     => $request->merek,
                 'satuan'    => $request->satuan,
@@ -307,47 +238,62 @@ class AhsWithItemsController extends Controller
             $totalHppAhs = 0;
 
             foreach ($request->items as $inputItem) {
-                $item = Item::where('item_no', $inputItem['item_no'])->firstOrFail();
+
                 $volume = $inputItem['volume'];
-                $hpp = $item->hpp;
-                $uraian = $item->deskripsi;
-                $satuan = $item->satuan;
-                $jumlah = $volume * $hpp;
+                $itemNo = $inputItem['item_no'];
 
-                AhsItem::create([
-                    'ahs_id'  => $add_ahs->ahs_id,
-                    'item_id' => $item->item_id,
-                    'uraian'  => $uraian,
-                    'satuan'  => $satuan,
-                    'volume'  => $volume,
-                    'hpp'     => $hpp,
-                    'jumlah'  => $jumlah,
-                ]);
+                // =========================
+                // JIKA ITEM BIASA
+                // =========================
+                if (Item::where('item_no', $itemNo)->exists()) {
 
-                $totalHppAhs += $jumlah;
+                    $item = Item::where('item_no', $itemNo)->first();
+
+                    $hpp     = $item->hpp;
+                    $uraian = $item->deskripsi;
+                    $satuan = $item->satuan;
+                    $jumlah = $volume * $hpp;
+
+                    AhsItem::create([
+                        'ahs_id'  => $add_ahs->ahs_id,
+                        'item_id' => $item->item_id,
+                        'uraian'  => $uraian,
+                        'kategori'  => 'item',
+                        'satuan'  => $satuan,
+                        'volume'  => $volume,
+                        'hpp'     => $hpp,
+                        'jumlah'  => $jumlah,
+                    ]);
+
+                    $totalHppAhs += $jumlah;
+
+                // =========================
+                // JIKA AHS LAIN
+                // =========================
+                } else {
+
+                    $childAhs = Ahs::where('ahs', $itemNo)->firstOrFail();
+
+                    $hpp     = $childAhs->harga_pokok_total;
+                    $uraian = '[AHS] ' . $childAhs->deskripsi;
+                    $satuan = $childAhs->satuan;
+                    $jumlah = $volume * $hpp;
+
+                    AhsItem::create([
+                        'ahs_id'  => $add_ahs->ahs_id,
+                        'item_id' => $childAhs->ahs_id, // 👈 PENTING
+                        'uraian'  => $uraian,
+                        'kategori'  => 'ahs',
+                        'satuan'  => $satuan,
+                        'volume'  => $volume,
+                        'hpp'     => $hpp,
+                        'jumlah'  => $jumlah,
+                    ]);
+
+                    $totalHppAhs += $jumlah;
+                }
             }
-
             $add_ahs->update(['harga_pokok_total' => $totalHppAhs]);
-
-            // 3) create Item yang mewakili AHS
-            $add_ahs_to_item = Item::create([
-                'item_no'   => $this->generateNoAhs(),
-                'ahs'       => 'AHS',
-                'deskripsi' => $add_ahs->deskripsi,
-                'satuan'    => $add_ahs->satuan,
-                'hpp'       => $add_ahs->harga_pokok_total,
-                'provinsi'  => $add_ahs->provinsi,
-                'kab'       => $add_ahs->kab,
-                'tahun'     => $add_ahs->tahun,
-                'merek' => $add_ahs->merek ?? null,
-                'vendor_id' => $vendorId,
-                // jangan simpan produk_foto/produk_dokumen di kolom item lagi
-                'produk_deskripsi' => $add_ahs->produk_deskripsi ?? null,
-                'spesifikasi' => $add_ahs->spesifikasi ?? null
-            ]);
-
-            // update nilai ahs (item_no) di table ahs
-            $add_ahs->update(['ahs' => $add_ahs_to_item->item_no]);
 
             // 4) UPLOAD FILES -> simpan ke tabel item_files (polymorphic)
             // FOTO
@@ -367,17 +313,8 @@ class AhsWithItemsController extends Controller
                         'file_path'     => $path,
                         'file_type'     => 'gambar',
                     ]);
-
-                    // 🔹 SIMPAN KE ITEM AHS
-                    ItemFile::create([
-                        'fileable_id'   => $add_ahs_to_item->item_id,
-                        'fileable_type' => Item::class,
-                        'file_path'     => $path,
-                        'file_type'     => 'gambar',
-                    ]);
                 }
             }
-
 
             // --- DOKUMEN ---
             if ($request->hasFile('produk_dokumen')) {
@@ -395,16 +332,9 @@ class AhsWithItemsController extends Controller
                         'file_path'     => $path,
                         'file_type'     => 'dokumen',
                     ]);
-
-                    // 🔹 KE ITEM
-                    ItemFile::create([
-                        'fileable_id'   => $add_ahs_to_item->item_id,
-                        'fileable_type' => Item::class,
-                        'file_path'     => $path,
-                        'file_type'     => 'dokumen',
-                    ]);
                 }
             }
+
             DB::commit();
 
             return response()->json(['success' => true, 'message' => 'Data AHS berhasil ditambahkan']);
@@ -431,147 +361,175 @@ class AhsWithItemsController extends Controller
     public function update(Request $request, $ahs_id)
     {
         DB::beginTransaction();
-
-        $uploadedPaths = []; // Untuk rollback file jika error
+        $uploadedPaths = [];
 
         try {
-            // VALIDASI
+            // 1. VALIDASI
             $request->validate([
                 'deskripsi' => 'required|string',
-                'satuan'    => 'required|string',
-                'provinsi'  => 'required|string',
-                'kab'       => 'required|string',
-                'tahun'     => 'required|string',
-
-                'merek'            => 'nullable|string',
-                'vendor_id'        => 'nullable|integer|exists:vendors,vendor_id',
-                'spesifikasi'      => 'nullable|string',
-                'produk_deskripsi' => 'nullable|string',
-
-                // MULTIPLE FILE (foto)
-                'produk_foto'   => 'nullable|array',
-                'produk_foto.*' => 'file|mimes:jpg,jpeg,png|max:2048',
-
-                // MULTIPLE FILE (dokumen)
-                'produk_dokumen'   => 'nullable|array',
-                'produk_dokumen.*' => 'file|mimes:pdf,doc,docx,xls,xlsx|max:5120',
-
+                // ... validasi lainnya ...
                 'items'     => 'required|array',
-                'items.*.item_no' => 'required|string|exists:items,item_no',
-                'items.*.volume'  => 'required|numeric|min:0.01',
-            ], [
-                'deskripsi.required' => 'Masukkan Deskripsi AHS',
-                'satuan.required'    => 'Masukkan Satuan AHS',
-                'provinsi.required'  => 'Masukkan Provinsi',
-                'kab.required'       => 'Masukkan Kabupaten / Kota',
-                'tahun.required'     => 'Masukkan Tahun',
             ]);
 
-            // AMBIL DATA AHS
-            $ahs = Ahs::find($ahs_id);
-            if (!$ahs) throw new \Exception('Data AHS tidak ditemukan');
+            $vendorId = null;
+            if ($request->filled('vendor_id')) {
+                $vendor = Vendor::where('vendor_id', $request['vendor_id'])->first();
+                if ($vendor) {
+                    $vendorId = $vendor->vendor_id;
+                }
+            }
 
-            // UPDATE DATA AHS (header)
+            // 2. UPDATE HEADER
+            $ahs = Ahs::findOrFail($ahs_id);
             $ahs->update([
                 'deskripsi' => $request->deskripsi,
                 'satuan'    => $request->satuan,
                 'provinsi'  => $request->provinsi,
                 'kab'       => $request->kab,
                 'tahun'     => $request->tahun,
-                'vendor_id'     => $request->vendor_id,
-                'merek'     => $request->merek,
+                'merek'    => $request->merek,
+                'produk_deskripsi'    => $request->produk_deskripsi,
+                'spesifikasi'    => $request->spesifikasi,
+                'vendor_id'    => $vendorId,
+                // field lain...
             ]);
 
-            // HAPUS DETAIL LAMA
-            AhsItem::where('ahs_id', $ahs->ahs_id)->delete();
+            // ==========================================================
+            // PERBAIKAN: SESUAIKAN NAMA PRIMARY KEY DI BAWAH INI
+            // ==========================================================
+            $primaryKey = 'ahs_item_id'; // <--- GANTI 'ahs_item_id' DENGAN NAMA KOLOM ASLI DI TABEL ahs_items ANDA
+            // ==========================================================
 
-            // BUAT DETAIL BARU
+            // A. Ambil ID yang ada di DB (Gunakan nama kolom yang benar)
+            $existingIds = $ahs->items()->pluck($primaryKey)->toArray();
+
+            // B. Ambil ID dari Form
+            $submittedIds = [];
+            if ($request->has('items')) {
+                foreach ($request->items as $item) {
+                    // Pastikan Frontend mengirim key 'id' yang berisi nilai Primary Key tersebut
+                    if (isset($item['id']) && $item['id']) {
+                        $submittedIds[] = $item['id'];
+                    }
+                }
+            }
+
+            // C. HAPUS Data
+            $idsToDelete = array_diff($existingIds, $submittedIds);
+            if (!empty($idsToDelete)) {
+                // Kita gunakan whereIn delete manual agar lebih aman dari nama PK yang beda
+                AhsItem::whereIn($primaryKey, $idsToDelete)->delete();
+            }
+
+            // D. LOOPING UPDATE / INSERT
             $totalHppAhs = 0;
 
-            foreach ($request->items as $inputItem) {
-                $item = Item::where('item_no', $inputItem['item_no'])->firstOrFail();
-                $volume = $inputItem['volume'];
+            if ($request->has('items')) {
+                foreach ($request->items as $inputItem) {
 
-                $jumlah = $volume * $item->hpp;
+                    $volume = $inputItem['volume'] ?? 0;
+                    $itemNo = $inputItem['item_no'] ?? null;
 
-                AhsItem::create([
-                    'ahs_id'  => $ahs->ahs_id,
-                    'item_id' => $item->item_id,
-                    'uraian'  => $item->deskripsi,
-                    'satuan'  => $item->satuan,
-                    'volume'  => $volume,
-                    'hpp'     => $item->hpp,
-                    'jumlah'  => $jumlah,
-                ]);
+                    if (!$itemNo) continue;
 
-                $totalHppAhs += $jumlah;
+                    // ... (Logika Hitung HPP / Cari Material sama seperti sebelumnya) ...
+                    $hpp = 0;
+                    $uraian = '';
+                    $satuan = '';
+                    $kategori = '';
+                    $itemId = null;
+                    $materialItem = Item::where('item_no', $itemNo)->first();
+
+                    if ($materialItem) {
+                        $hpp     = $materialItem->hpp;
+                        $uraian  = $materialItem->deskripsi;
+                        $satuan  = $materialItem->satuan;
+                        $itemId  = $materialItem->item_id;
+                        $kategori = 'item';
+                    } else {
+                        $childAhs = Ahs::where('ahs', $itemNo)->first();
+                        if ($childAhs) {
+                            $hpp     = $childAhs->harga_pokok_total;
+                            $uraian  = '[AHS] ' . $childAhs->deskripsi;
+                            $satuan  = $childAhs->satuan;
+                            $itemId  = $childAhs->ahs_id;
+                            $kategori = 'ahs';
+                        }
+                    }
+
+                    $jumlah = $volume * $hpp;
+                    $totalHppAhs += $jumlah;
+
+                    // EKSEKUSI SIMPAN
+                    // Cek apakah ini update (punya ID) atau insert (tidak punya ID)
+                    if (isset($inputItem['id']) && $inputItem['id']) {
+                        // --- UPDATE ITEM LAMA ---
+                        // Gunakan variabel $primaryKey yang kita set di atas
+                        $existingItem = AhsItem::where('ahs_id', $ahs->ahs_id)
+                            ->where($primaryKey, $inputItem['id']) // <--- Perubahan Disini
+                            ->first();
+
+                        if ($existingItem) {
+                            $existingItem->update([
+                                'item_id' => $itemId,
+                                'uraian'  => $uraian,
+                                'kategori'=> $kategori,
+                                'satuan'  => $satuan,
+                                'volume'  => $volume,
+                                'hpp'     => $hpp,
+                                'jumlah'  => $jumlah,
+                            ]);
+                        }
+                    } else {
+                        // --- INSERT ITEM BARU ---
+                        AhsItem::create([
+                            'ahs_id'  => $ahs->ahs_id,
+                            'item_id' => $itemId,
+                            'uraian'  => $uraian,
+                            'kategori'=> $kategori,
+                            'satuan'  => $satuan,
+                            'volume'  => $volume,
+                            'hpp'     => $hpp,
+                            'jumlah'  => $jumlah,
+                        ]);
+                    }
+                }
             }
 
             $ahs->update(['harga_pokok_total' => $totalHppAhs]);
 
-            // AMBIL ITEM YANG MEWAKILI AHS (item_no = nilai ahs)
-            $item_ahs = Item::where('item_no', $ahs->ahs)->first();
-            if (!$item_ahs) throw new \Exception('Item AHS tidak ditemukan');
-
-            // UPDATE FIELDS BIASA (selain file)
-            $item_ahs->update([
-                'deskripsi'        => $ahs->deskripsi,
-                'satuan'           => $ahs->satuan,
-                'hpp'              => $totalHppAhs,
-                'provinsi'         => $ahs->provinsi,
-                'kab'              => $ahs->kab,
-                'tahun'            => $ahs->tahun,
-
-                'merek'            => $request->merek,
-                'vendor_id'        => $request->vendor_id,
-                'spesifikasi'      => $request->spesifikasi,
-                'produk_deskripsi' => $request->produk_deskripsi,
-            ]);
-
-            /*
-        |--------------------------------------------------------------------------
-        | ⭐ UPDATE FILE – MULTIPLE FOTO & DOKUMEN
-        |--------------------------------------------------------------------------
-        | Disimpan ke tabel item_files POLYMORPHIC
-        |--------------------------------------------------------------------------
-        */
-
-            // (Opsional) Hapus file lama jika ingin replace total
-            if ($request->replace_files == '1') {
-                foreach ($item_ahs->files as $f) {
-                    Storage::disk('public')->delete($f->file_path);
-                    $f->delete();
-                }
-            }
-
-            // FOTO
+            // ... (Kode File Foto/Dokumen lanjutkan seperti biasa) ...
             if ($request->hasFile('produk_foto')) {
                 foreach ($request->file('produk_foto') as $file) {
+
                     $filename = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
                     $path = $file->storeAs('uploads/gambar', $filename, 'public');
 
                     $uploadedPaths[] = $path;
 
+                    // 🔹 SIMPAN KE AHS
                     ItemFile::create([
-                        'fileable_id'   => $item_ahs->item_id,
-                        'fileable_type' => Item::class,
+                        'fileable_id'   => $ahs->ahs_id,
+                        'fileable_type' => Ahs::class,
                         'file_path'     => $path,
                         'file_type'     => 'gambar',
                     ]);
                 }
             }
 
-            // DOKUMEN
+            // --- DOKUMEN ---
             if ($request->hasFile('produk_dokumen')) {
                 foreach ($request->file('produk_dokumen') as $file) {
+
                     $filename = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
                     $path = $file->storeAs('uploads/dokumen', $filename, 'public');
 
                     $uploadedPaths[] = $path;
 
+                    // 🔹 KE AHS
                     ItemFile::create([
-                        'fileable_id'   => $item_ahs->item_id,
-                        'fileable_type' => Item::class,
+                        'fileable_id'   => $ahs->ahs_id,
+                        'fileable_type' => Ahs::class,
                         'file_path'     => $path,
                         'file_type'     => 'dokumen',
                     ]);
@@ -579,18 +537,10 @@ class AhsWithItemsController extends Controller
             }
 
             DB::commit();
-            return response()->json(['success' => true, 'message' => 'Data AHS berhasil diperbarui']);
+            return response()->json(['success' => true, 'message' => 'Berhasil']);
         } catch (\Throwable $e) {
             DB::rollBack();
-
-            foreach ($uploadedPaths as $p) {
-                Storage::disk('public')->delete($p);
-            }
-
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 

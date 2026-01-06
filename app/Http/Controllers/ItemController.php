@@ -195,6 +195,8 @@ class ItemController extends Controller
             'produk_foto'      => 'nullable|array',
             'produk_foto.*'    => 'file|mimes:jpg,jpeg,png|max:2048',
 
+            'produk_deskripsi' => 'nullable|string',
+
             // Dokumen
             'produk_dokumen'   => 'nullable|array',
             'produk_dokumen.*' => 'file|mimes:pdf,doc,docx|max:5120',
