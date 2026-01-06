@@ -133,7 +133,7 @@ class AhsImport implements ToCollection, WithHeadingRow
     {
         $validator = Validator::make($data, [
             'item_no'     => 'required|string',
-            'volume' => 'required|numeric|min:0.001',
+            'item_volume' => 'required|numeric|min:0.001',
         ]);
 
         if ($validator->fails()) {
@@ -155,7 +155,7 @@ class AhsImport implements ToCollection, WithHeadingRow
         // Kembalikan data tervalidasi + model Item yg ditemukan
         return [
             'item_no'     => $validated['item_no'],
-            'item_volume' => $validated['volume'],
+            'item_volume' => $validated['item_volume'],
             'item_model'  => $item,
         ];
     }

@@ -19,7 +19,6 @@ class AhsItem extends Model
         'ahs_id',
         'item_id',
         'uraian',
-        'kategori',
         'satuan',   
         'volume',
         'hpp',
@@ -49,9 +48,5 @@ class AhsItem extends Model
     public function item()
     {
         return $this->belongsTo(Item::class, 'item_id', 'item_id');
-    }
-    public function item_form_ahs()
-    {
-        return $this->belongsTo(Ahs::class, 'item_id', 'ahs_id');
     }
 }

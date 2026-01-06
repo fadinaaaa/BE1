@@ -37,7 +37,7 @@ class AhsImportTemplateExport implements FromCollection, WithHeadings, WithStyle
 
             // === DETAIL ITEM (BERULANG) ===
             'item_no',
-            'volume',
+            'item_volume',
         ];
     }
 

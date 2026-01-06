@@ -16,16 +16,16 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 Route::get('/vendors/export', [VendorController::class, 'export'])->name('vendors.export');
 Route::get('/items/export', [ItemController::class, 'export']);
-Route::get('/ahs', [AhsWithItemsController::class, 'get_data_ahs']);
-Route::get('/ahs/option-item', [AhsWithItemsController::class, 'getOptionItem']);
-Route::put('/ahs/{ahs_id}', [AhsWithItemsController::class, 'update']);
 
 Route::middleware('auth:sanctum')->group(function () {
 
 
     //AHS
+    Route::get('/ahs', [AhsWithItemsController::class, 'get_data_ahs']);
+    Route::get('/ahs/option-item', [AhsWithItemsController::class, 'getOptionItem']);
     Route::post('/ahs', [AhsWithItemsController::class, 'addDataAhs']);
-    Route::delete('/ahs/{ahs_id}', [AhsWithItemsController::class, 'destroy']);
+    Route::put('/ahs/{ahs_id}', [AhsWithItemsController::class, 'update']);
+    Route::delete('/{ahs_id}', [AhsWithItemsController::class, 'destroy']);
     Route::get('ahs/export', [AhsWithItemsController::class, 'export'])->name('ahs.export');
     Route::get('ahs/import/template', [AhsWithItemsController::class, 'downloadImportTemplate'])->name('ahs.import.template');
     Route::post('ahs/import', [AhsWithItemsController::class, 'import'])->name('ahs.import.store');

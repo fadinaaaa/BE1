@@ -33,12 +33,12 @@ class ItemsExport implements FromQuery, WithHeadings, WithMapping, ShouldAutoSiz
             'merek',
             'satuan',
             'hpp',
-            'vendor_no',
+            'nama_vendor',
             'provinsi',
             'kab',
             'tahun',
-            'produk_deskripsi',
             'spesifikasi',
+            'produk_deskripsi',
         ];
     }
 
@@ -57,7 +57,7 @@ class ItemsExport implements FromQuery, WithHeadings, WithMapping, ShouldAutoSiz
             $item->merek,
             $item->satuan,
             $item->hpp,
-            $item->vendor ? $item->vendor->vendor_no : null,
+            $item->vendor ? $item->vendor->nama_vendor : 'N/A',
             $item->provinsi,
             $item->kab,
             $item->tahun,
