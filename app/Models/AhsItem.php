@@ -43,6 +43,11 @@ class AhsItem extends Model
         return $this->belongsTo(Ahs::class, 'ahs_id', 'ahs_id');
     }
 
+     public function ahsRef()
+    {
+        return $this->belongsTo(Ahs::class, 'item_id', 'ahs_id');
+    }
+
     /**
      * Relasi ke Item (opsional)
      */

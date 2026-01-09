@@ -177,7 +177,7 @@ class AhsWithItemsController extends Controller
                 'provinsi'  => 'required|string',
                 'kab'       => 'required|string',
                 'tahun'     => 'required|string',
-                'vendor_no' => 'nullable|string|exists:vendors,vendor_no',
+                'vendor_id' => 'nullable|string|exists:vendors,vendor_id',
 
                 // ubah ke array agar mendukung multiple file; tetap kompatibel jika user hanya kirim 1 file
                 'produk_foto'        => 'nullable|array',
@@ -217,7 +217,13 @@ class AhsWithItemsController extends Controller
                 'items.*.volume.min' => 'Volume minimal 0.01!',
             ]);
 
-            $vendorId = $request->vendor_id ?? null;
+            $vendorId = null;
+            if ($request->filled('vendor_id')) {
+                $vendor = Vendor::where('vendor_id', $request['vendor_id'])->first();
+                if ($vendor) {
+                    $vendorId = $vendor->vendor_id;
+                }
+            }
 
             $noAhs = $this->generateNoAhs();
             // 1) buat AHS dulu
@@ -231,6 +237,7 @@ class AhsWithItemsController extends Controller
                 'tahun'     => $request->tahun,
                 'spesifikasi' => $request->spesifikasi,
                 'produk_deskripsi' => $request->produk_deskripsi,
+                'vendor_id' => $vendorId,
                 'harga_pokok_total' => 0
             ]);
 
@@ -267,9 +274,9 @@ class AhsWithItemsController extends Controller
 
                     $totalHppAhs += $jumlah;
 
-                // =========================
-                // JIKA AHS LAIN
-                // =========================
+                    // =========================
+                    // JIKA AHS LAIN
+                    // =========================
                 } else {
 
                     $childAhs = Ahs::where('ahs', $itemNo)->firstOrFail();
@@ -473,7 +480,7 @@ class AhsWithItemsController extends Controller
                             $existingItem->update([
                                 'item_id' => $itemId,
                                 'uraian'  => $uraian,
-                                'kategori'=> $kategori,
+                                'kategori' => $kategori,
                                 'satuan'  => $satuan,
                                 'volume'  => $volume,
                                 'hpp'     => $hpp,
@@ -486,7 +493,7 @@ class AhsWithItemsController extends Controller
                             'ahs_id'  => $ahs->ahs_id,
                             'item_id' => $itemId,
                             'uraian'  => $uraian,
-                            'kategori'=> $kategori,
+                            'kategori' => $kategori,
                             'satuan'  => $satuan,
                             'volume'  => $volume,
                             'hpp'     => $hpp,
@@ -499,15 +506,36 @@ class AhsWithItemsController extends Controller
             $ahs->update(['harga_pokok_total' => $totalHppAhs]);
 
             // ... (Kode File Foto/Dokumen lanjutkan seperti biasa) ...
+            // ================= FOTO =================
+            $existingFotos = $request->input('existing_foto', []); // 🔥 JANGAN json_decode
+
+            $oldFotos = ItemFile::where('fileable_id', $ahs->ahs_id)
+                ->where('fileable_type', Ahs::class)
+                ->where('file_type', 'gambar')
+                ->get();
+
+            foreach ($oldFotos as $old) {
+
+                $oldFileName = basename($old->file_path); // 🔥 BANDINKAN NAMA FILE
+
+                if (!in_array($oldFileName, $existingFotos)) {
+
+                    if (Storage::disk('public')->exists($old->file_path)) {
+                        Storage::disk('public')->delete($old->file_path);
+                    }
+
+                    $old->delete();
+                }
+            }
+
+            // 🔹 SIMPAN FOTO BARU
             if ($request->hasFile('produk_foto')) {
                 foreach ($request->file('produk_foto') as $file) {
-
                     $filename = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
                     $path = $file->storeAs('uploads/gambar', $filename, 'public');
 
                     $uploadedPaths[] = $path;
 
-                    // 🔹 SIMPAN KE AHS
                     ItemFile::create([
                         'fileable_id'   => $ahs->ahs_id,
                         'fileable_type' => Ahs::class,
@@ -517,16 +545,36 @@ class AhsWithItemsController extends Controller
                 }
             }
 
-            // --- DOKUMEN ---
+            // ================= DOKUMEN =================
+            $existingDocs = $request->input('existing_produk_dokumen', []);
+
+            $oldDocs = ItemFile::where('fileable_id', $ahs->ahs_id)
+                ->where('fileable_type', Ahs::class)
+                ->where('file_type', 'dokumen')
+                ->get();
+
+            foreach ($oldDocs as $old) {
+
+                $oldFileName = basename($old->file_path);
+
+                if (!in_array($oldFileName, $existingDocs)) {
+
+                    if (Storage::disk('public')->exists($old->file_path)) {
+                        Storage::disk('public')->delete($old->file_path);
+                    }
+
+                    $old->delete();
+                }
+            }
+
+            // 🔹 SIMPAN DOKUMEN BARU
             if ($request->hasFile('produk_dokumen')) {
                 foreach ($request->file('produk_dokumen') as $file) {
-
                     $filename = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
                     $path = $file->storeAs('uploads/dokumen', $filename, 'public');
 
                     $uploadedPaths[] = $path;
 
-                    // 🔹 KE AHS
                     ItemFile::create([
                         'fileable_id'   => $ahs->ahs_id,
                         'fileable_type' => Ahs::class,
@@ -535,6 +583,7 @@ class AhsWithItemsController extends Controller
                     ]);
                 }
             }
+
 
             DB::commit();
             return response()->json(['success' => true, 'message' => 'Berhasil']);

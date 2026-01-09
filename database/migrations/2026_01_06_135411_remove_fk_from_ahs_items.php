@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('ahs_items', function (Blueprint $table) {
             $table->string('kategori')->nullable()->after('item_id');
-            
+
             $table->dropForeign(['item_id']);
         });
     }
@@ -26,10 +26,10 @@ return new class extends Migration
         Schema::table('ahs_items', function (Blueprint $table) {
 
             $table->foreign('item_id')
-                  ->references('item_id')
-                  ->on('items')
-                  ->onDelete('set null');
-                  
+                ->references('item_id')
+                ->on('items')
+                ->onDelete('set null');
+
             $table->dropColumn('kategori');
         });
     }

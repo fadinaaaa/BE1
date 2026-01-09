@@ -17,6 +17,7 @@ class AhsExport implements FromView, WithTitle
 
         $allAhs = Ahs::with([
             'items.item',
+            'items.ahsRef',
             'vendor'
         ])
             ->orderBy('ahs')

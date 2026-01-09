@@ -90,6 +90,7 @@ class ItemController extends Controller
                 'spesifikasi'      => 'nullable|string',
             ]);
 
+            
             // Konversi vendor_no -> vendor_id
             $vendorId = null;
             if ($request->filled('vendor_no')) {
@@ -162,6 +163,7 @@ class ItemController extends Controller
             ], 500);
         }
     }
+    
 
     public function update(Request $request, $id)
     {
@@ -240,44 +242,83 @@ class ItemController extends Controller
             }
         }
 
+        $existingFotos = $request->input('existing_produk_foto');
+        if (is_array($existingFotos)) {
 
-        // ==========================
-        // UPLOAD FOTO BARU
-        // ==========================
+            $oldFotos = ItemFile::where('fileable_id', $item->item_id)
+                ->where('fileable_type', Item::class)
+                ->where('file_type', 'gambar')
+                ->get();
+
+
+            foreach ($oldFotos as $old) {
+                $oldFileName = basename($old->file_path);
+                if (!in_array($oldFileName, $existingFotos)) {
+                    if (Storage::disk('public')->exists($old->file_path)) {
+                        Storage::disk('public')->delete($old->file_path);
+                    }
+                    $old->delete();
+                }
+            }
+        }
+
+        Log::info('existing foto from FE', [
+            'existing_foto' => $request->input('existing_foto'),
+            'existing_produk_foto' => $request->input('existing_produk_foto'),
+        ]);
+
+        // 🔹 SIMPAN FOTO BARU
         if ($request->hasFile('produk_foto')) {
+            foreach ($request->file('produk_foto') as $file) {
+                $filename = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
+                $path = $file->storeAs('uploads/gambar', $filename, 'public');
 
-            foreach ($request->file('produk_foto') as $foto) {
-
-                $path = $foto->store('uploads/gambar', 'public');
+                $uploadedPaths[] = $path;
 
                 ItemFile::create([
-                    'fileable_id'   => $item->item_id,   // FIXED !!!
+                    'fileable_id'   => $item->item_id,
                     'fileable_type' => Item::class,
                     'file_path'     => $path,
-                    'file_type'     => 'gambar'
+                    'file_type'     => 'gambar',
                 ]);
             }
         }
 
+        // ================= DOKUMEN =================
+        $existingDocs = $request->input('existing_produk_dokumen', []);
 
-        // ==========================
-        // UPLOAD DOKUMEN BARU
-        // ==========================
+        $oldDocs = ItemFile::where('fileable_id', $item->item_id)
+            ->where('fileable_type', Item::class)
+            ->where('file_type', 'dokumen')
+            ->get();
+
+        foreach ($oldDocs as $old) {
+            $oldFileName = basename($old->file_path);
+
+            if (!in_array($oldFileName, $existingDocs)) {
+                if (Storage::disk('public')->exists($old->file_path)) {
+                    Storage::disk('public')->delete($old->file_path);
+                }
+                $old->delete();
+            }
+        }
+
+        // 🔹 SIMPAN DOKUMEN BARU
         if ($request->hasFile('produk_dokumen')) {
+            foreach ($request->file('produk_dokumen') as $file) {
+                $filename = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
+                $path = $file->storeAs('uploads/dokumen', $filename, 'public');
 
-            foreach ($request->file('produk_dokumen') as $doc) {
-
-                $path = $doc->store('uploads/dokumen', 'public');
+                $uploadedPaths[] = $path;
 
                 ItemFile::create([
-                    'fileable_id'   => $item->item_id,   // FIXED !!!
+                    'fileable_id'   => $item->item_id,
                     'fileable_type' => Item::class,
                     'file_path'     => $path,
-                    'file_type'     => 'dokumen'
+                    'file_type'     => 'dokumen',
                 ]);
             }
         }
-
 
         // Hapus key agar tidak mengganggu update
         unset(
